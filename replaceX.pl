@@ -121,15 +121,15 @@ sub replace_stuff
 
 sub sending_im_msg
 {
-	my ($account, $sender, @message) = @_;
-	@_[2] = replace_stuff(@message[0]);
+#	my ($account, $sender, @message) = @_;
+#	@_[2] = replace_stuff(@message[0]);
 	return 0;
 }
 
 sub sending_chat_msg
 {
-	my ($account, @message) = @_;
-	@_[1] = replace_stuff(@message[0]);
+#	my ($account, @message) = @_;
+#	@_[1] = replace_stuff(@message[0]);
 	return 0;
 }
 
