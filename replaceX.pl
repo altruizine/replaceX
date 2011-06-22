@@ -11,8 +11,8 @@ my %rules = ();
 	version => "0.1",
 	summary =>     "Text replacement plugin, with regex support.",
 	description => "Text replacement plugin, with regex support. See '/help rx' for more information.",
-	author => "Sadrul Habib Chowdhury <sadrul\@pidgin.im>",
-	url => "http://developer.pidgin.im/wiki/sadrul/",
+	author => "Sadrul Habib Chowdhury <sadrul\@pidgin.im> and contributors",
+	url => "https://github.com/altruizine/replaceX",
 
 	load => "plugin_load",
 );
@@ -29,10 +29,11 @@ sub save_rules
 {
 	local @ar = ();
 	while (my($k, $v) = each(%rules)) {
-		push(@ar, $k);
+		push(@ar, $k) if($k);
 	}
 	push(@ar, "");
 	Purple::Prefs::set_string_list("/plugins/core/rx/names", \@ar);
+	load_prefs();
 }
 
 sub list_rules
@@ -43,7 +44,9 @@ sub remove_rules
 {
 	my @r = shift();
 	foreach (@r) {
-		Purple::Prefs::remove($_);
+		Purple::Prefs::set_string("/plugins/core/rx/rules/$_/text", '');
+		Purple::Prefs::set_string("/plugins/core/rx/rules/$_/replace", '');
+		Purple::Prefs::remove("/plugins/core/rx/rules/$_");
 		delete $rules{$_};
 	}
 	save_rules();
@@ -62,7 +65,7 @@ sub rx_cmd_cb
 			my $replace = $val->{'replace'};
 			$text = escape_text($text);
 			$replace = escape_text($replace);
-			$output .= "\t$key: $text ==> $replace\n";
+			$output .= "\t$key: $text ==> $replace\n" if($text);
 		}
 		$conv->write("", $output,
 				Purple::Conversation::Flags::NO_LOG | Purple::Conversation::Flags::RAW | Purple::Conversation::Flags::NO_LINKIFY,
@@ -79,14 +82,16 @@ sub rx_cmd_cb
 		return Purple::Cmd::Return::FAILED;
 	}
 
-	@args = split(/ /, @args[0]);
+	@args = split(/ /, $args[0]);
 	my $name = shift(@args);
 	my @ar = split(/==>/, join(" ", @args));
 	if (scalar(@ar) != 2) {
 		return Purple::Cmd::Return::FAILED;
 	}
-	my $text = @ar[0];
-	my $replace = @ar[1];
+	my $text = $ar[0];
+	my $replace = $ar[1];
+	$text =~ s/^\s*|\s*$//g;
+	$replace =~ s/^\s*|\s*$//g;
 
 	$rules{$name}{'text'} = $text;
 	$rules{$name}{'replace'} = $replace;
@@ -94,6 +99,8 @@ sub rx_cmd_cb
 	Purple::Prefs::add_none("/plugins/core/rx/rules/$name");
 	Purple::Prefs::add_string("/plugins/core/rx/rules/$name/text", $text);
 	Purple::Prefs::add_string("/plugins/core/rx/rules/$name/replace", $replace);
+	Purple::Prefs::set_string("/plugins/core/rx/rules/$name/text", $text);
+	Purple::Prefs::set_string("/plugins/core/rx/rules/$name/replace", $replace);
 
 	push(@names, $name);
 	save_rules();
@@ -113,8 +120,9 @@ sub replace_stuff
 
 		$text =~ s/\//\\\//g;
 		$replace =~ s/\//\\\//g;
+		$replace =~ s/\$0/\$\&/g;
 
-		eval("\$msg =~ s/$text/$replace/g;");
+		eval("\$msg =~ s/$text/$replace/ig;");
 	}
 	return $msg;
 }
@@ -122,14 +130,14 @@ sub replace_stuff
 sub sending_im_msg
 {
 	my ($account, $sender, @message) = @_;
-	@_[2] = replace_stuff(@message[0]);
+	$_[2] = replace_stuff($message[0]);
 	return 0;
 }
 
 sub sending_chat_msg
 {
 	my ($account, @message) = @_;
-	@_[1] = replace_stuff(@message[0]);
+	$_[1] = replace_stuff($message[0]);
 	return 0;
 }
 
@@ -137,8 +145,9 @@ sub writing_msg
 {
 	my ($account, $sender, @message, $conv, $flag, $data) = @_;
 	if ($flag & (Purple::Conversation::Flags::SEND | Purple::Conversation::Flags::RECV)) {
-		@_[2] = replace_stuff(@message[0]);
+		$_[2] = replace_stuff(@message[0]);
 	} else {
+		# Other
 	}
 	return 0;
 }
@@ -146,7 +155,7 @@ sub writing_msg
 sub receiving_msg
 {
 	my ($account, $sender, @message, $conv, @flag, $data) = @_;
-	@_[2] = replace_stuff(@message[0]);
+	$_[2] = replace_stuff($message[0]);
 	return 0;
 }
 
@@ -155,7 +164,7 @@ sub plugin_load
 	my $plugin = shift;
 	my $help = "Manage text replacement rules with perl-regex support.\n
 EXAMPLES:
-'/rx -a gf-trac gf#([0-9]+) ==> &lt;a http=\"http://plugins.guifications.org/trac/ticket/\$1\">\$0&lt;/a>' : adds (or replaces) a replacement rule named 'gf-trac'.
+'/rx -a gf-trac gf#([0-9]+) ==> &lt;a href=\"http://plugins.guifications.org/trac/ticket/\$1\">\$\&&lt;/a>' : adds (or replaces) a replacement rule named 'gf-trac'.
 '/rx -d gf-trac' : removes the replacement rule.
 '/rx -l' : lists all the replacement rules.
 ";
@@ -202,6 +211,7 @@ sub load_prefs
 sub read_rules
 {
 	foreach (@names) {
+		next unless($_);
 		my $text = Purple::Prefs::get_string("/plugins/core/rx/rules/" . $_ . "/text");
 		my $replace = Purple::Prefs::get_string("/plugins/core/rx/rules/" . $_ . "/replace");
 		$rules{$_}{'text'} = $text;
